@@ -1,0 +1,126 @@
+This file quickly describes how to use exANM, and provides an example.
+
+================================================================
+1. Usage
+
+The underlying idea behind the exANM is that the motions of a protein that is embedded
+in a membrane will be different from those of a solvated protein, and that the source
+of the difference can be approximated as arising from harmonic interactions between the 
+protein and the membrane.  To analyze the motions of the protein under the influence 
+of the surrounding membrane, we construct a supersystem consisting of a protein 'system'
+and a membrane 'environment', both of which are represented by point masses connected 
+via springs.  The Hessian matrix for this system is calculated straightforwardly.
+
+The Hessian matrix describes motions of both the protein and the membrane, and we wish
+to investigate motions of the protein alone.  To do this, we assume that the motions of the
+membrane are always those that will minimize energy (or, more rigorously, that the membrane
+fluctuates within a harmonic well about its mimimum energy conformation).  The assumption
+that the membrane populates a well-defined ensemble allows us to remove the membrane modes 
+and calculate the effective modes of the protein as influenced by the membrane.  This 
+calculation requires inversion of a large symmetric matrix.
+
+The calculation proceeds as follows:
+
+- The Hessian for the protein/membrane supersystem is calculated.
+- The part of the Hessian corresponding to the membrane alone is 
+   inverted.  This is the most computationally intensive step.
+- The Hessian for the protein/membrane supersystem is re-calculated,
+   and from this and the above described inverse, a pseduohessian 
+   for the protein is calculated.
+- The protein pseudohessian is decomposed, yielding the modes.
+
+
+====================================================================
+2. Example
+--------------------------------------------------------------------
+As an example, the exANM modes of 2NWL will be calculated.
+
+The file '2nwl-mem.pdb' contains the alpha carbons of 2NWL.pdb, and
+is structurally aligned such that the symmetry axis is coincident with 
+the z-axis.  This file provides the starting point for the calcuation.
+
+
+
+Generating the membrane fragment
+---------------------------------
+A fragment of coarse-grained membrane is generated from the program 
+'cgmembrane':
+
+% cgmembrane 2nwl-mem.pdb -s 3.1 -b -14.0 14.0 >2nwl_env.pdb
+
+This command generates a coarse-grained membrane that excludes 
+the volume occupied by the structure '2nwl-mem.pdb'.  The membrane 
+consists of spheres that are 3.1 Angstroms in radius (specified by the
+-s flag) and arranged in an FCC lattice (the default lattice;  
+lattice can be changed to SH or SC using the -sh flag).  The membrane 
+fragment extends to a radius of 80 Angstroms in the x-y direction (default;
+this can be changed with the -r flag), and from -14 Angstroms to 14 
+Angstroms in the z-direction (specified by -b).
+
+Running cgmembrane without any arguments will produce a list of 
+command-line options.  
+
+The cgmembrane program also calculates the mass of the membrane nodes based
+on assumed membrane density.  This step is necessary because the modes 
+that are calculated are orthogonal only in mass-weighted coordinates.  The
+masses of the membrane nodes (which are called Q1) and the residues are
+put in the file 'massfile_3.1.dat'.  
+
+
+The parameter file
+---------------------------------
+The input to the exanm program is a parameter file containing keywords that
+identify other files.  File names are specified in the parameter file with
+the syntax
+
+keyword=filename
+
+Where 'keyword' is one of the currently recognized parameter keywords:
+
+syscoords -- REQUIRED PDB file of protein
+envcoords -- REQUIRED PDB file of membrane fragment
+massfile -- REQUIRED PDB file of node masses.  Format is three columns:
+            First column is the atom name as it appears in the PDB file,
+            Second column is a node identifier used internally,
+            Third column is the node mass in arbitrary units.  
+            Any atoms that apper in the syscoords of envcoords file must
+            have a mass specified in the massfile.  
+springfile -- Optional file of node force constants.  Format is three columns:
+              First two columns are identifiers of nodes that are joined by a spring.
+              These should correspond to the node identifiers that appear in the 
+              center column of the massfile.  The third column is the value of the 
+              force constant connecting nodes of these two types, in arbitrary units.
+              *NOTE that springs that are not specified in the springfile will be 
+              assigned the default value of 1.0.
+cutfile -- Optional file of node HALF cutoff distances.  This file has two columns:
+           First column is a node identifier, as in massfile and springfile.  Second
+           column is half the cutoff distance associated with that node.  
+           Only nodes that are listed in the cutfile will be assigned contact cutoff
+           distances -- it is not necessary to list all node types in the cutfile.
+           Nodes that are not listed in the cutfile will be assigned the default 
+           cutoff value.  If 'DEFCUT' is specified as a node identifier in the 
+           cutfile, then this value will be used as the default value for any 
+           unspecified nodes.  
+contactfile -- Optional file of node contacts
+
+
+Generating the membrane sub-hessian
+---------------------------------
+The most expensive step of the procedure is inverting the membrane sub-hessian.  
+In the current form, this needs to be done externally, so the first step is
+to print this matrix to a file so that it can be inverted.  This is done with
+'exanm':
+
+% exanm 2nwl_exanm.param >2nwl_env-env.sparsehessian
+
+Now it is assumed that the matrix in '2nwl_env-env.subhessian' is inverted, and
+that its inverse is in the file '2nwl_env-env.inv'.  This is provided to the 
+exanm program to generate the pseudohessian for the protein:
+
+% exanm 2nwl_exanm.param -r 2nwl_env-env.inv >2nwl.pseudohessian
+
+The eigendecomposition of this matrix yields the normal modes of motion.
+
+
+
+

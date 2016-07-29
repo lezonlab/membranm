@@ -1,0 +1,5 @@
+syscoords=2nwl-mem.pdb
+envcoords=2nwl_env.pdb
+massfile=massfile_3.1.dat
+cutfile=enmem_cutfile.dat
+springfile=springfile_2.dat

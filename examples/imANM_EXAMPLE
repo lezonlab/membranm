@@ -1,0 +1,36 @@
+As an example, the blockfile '2nwl.blk' is provided, along with its 
+associated PDB file '2nwl-mem.pdb'.
+
+To view the command-line options of imANM, simply run the program without 
+an input file:
+
+$ imanm
+
+To generate a RTB Hessian from the blocks:
+$ imanm 2nwl.blk >2nwl.hessian
+
+The program reads the block definitions and the PDB file, calculates
+the ANM Hessian in terms of the rigid blocks, and prints it to 
+standard output (here redirected to '2nwl.hessian').
+
+The Hessian matrix must then be decomposed.  This can be done with the
+provided 'lapdecomp_free' program, which requires the LAPACK and BLAS libraries:
+$ lapdecomp 2nwl.hessian 50
+
+The files '2nwl.val' and '2nwl.vec' contain the first 50 eigenvalues and
+eigenvectors of the block Hessian.  The block eigenvectors are projected
+back into the space of all residues using the 'block2full_free' program provided.
+This program needs to know the relationship between the rigid blocks and the
+individual nodes of the molecule, and it gets this information from a projection
+matrix that maps the block space to the all-residue space.  The projection
+matrix '2nwl.prj' is generated with the imANM program with the command:
+
+$ imanm 2nwl.blk -p >2nwl.prj
+
+Now the block eigenvectors can be projected into the space of all residues:
+$ block2full_free 2nwl.prj 2nwl.vec >2nwl_full.vec
+
+The eigenvectors in 2nwl_full.vec contain 3582 components, corresponding to 
+x-, y- and z-components for each of the 1194 residues.  
+
+

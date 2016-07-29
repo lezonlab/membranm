@@ -1,0 +1,232 @@
+------------------------------
+Membrane ANM
+02/06/2012
+------------------------------
+
+These files can be used to investigate the effects of the 
+membrane on ANM results.  
+
+==========================================================
+
+1. Introduction
+2. Installation
+3. File descriptions
+
+==========================================================
+
+==========================================================
+
+1. Introduction
+The membranm software package consists of two coarse-grained methods for 
+incorporating the constraining effects of membranes into elastic network 
+models of membrane proteins. In the first method, imANM, the membrane is 
+implicitly incorporated into the force constants of the harmonic 
+constraints of the protein. The calculation in this case is no more 
+computationally expensive than traditional elastic network modes. 
+
+In the second case, exANM, a fragment of the membrane surrounding the 
+protein is explicitly modeled as a space-filling lattice. This model 
+allows the user to control the membrane thickness, mass density and 
+stiffness. 
+
+-----------------
+imANM
+-----------------
+The Anisotropic Network Model (ANM) approximates protein equilibrium 
+fluctuations as resulting from a network of residues connected via classical 
+springs. Because the springs themselves are rotationally invariant, ANM 
+predictions apply to proteins that are in a spatially isotropic environment. 
+Membrane proteins do not fit the bill, as their surroundings are direction-
+dependent: Motion in the direction normal to the membrane is not the same 
+as motion in the directions parallel to the membrane.
+
+The imANM makes up for this directional difference by reducing the energetic
+cost of stretching a bond parallel to the membrane normal. That is, the very 
+springs in the imANM are themselves anisotropic, so that motion across the 
+membrane is encouraged and motion against the membrane is discouraged. It is
+a rough approximation, but it is computationally cheap. Users simply specify 
+the amount by which trans-membrane force constants are scaled, and the 
+Hessian matrix is calculated as in standard ANM. 
+
+The software also uses the rotations and translations of blocks (RTB) method
+for grouping residues together into rigid blocks.
+
+Users must decompose the Hessian themselves to find modes. This can be 
+done with the 
+
+-----------------
+exANM
+-----------------
+
+The underlying idea behind the exANM is that the motions of a protein that is 
+embedded in a membrane will be different from those of a solvated protein, and 
+that the source of the difference can be approximated as arising from harmonic 
+interactions between the protein and the membrane.  To analyze the motions of 
+the protein under the influence of the surrounding membrane, we construct a 
+supersystem consisting of a protein 'system' and a membrane 'environment', 
+both of which are represented by point masses connected via springs.  The 
+Hessian matrix for this system is calculated straightforwardly.
+
+The Hessian matrix describes motions of both the protein and the membrane, and 
+we wish to investigate motions of the protein alone.  To do this, we assume 
+that the motions of the membrane are always those that will minimize energy 
+(or, more rigorously, that the membrane fluctuates within a harmonic well about 
+its mimimum energy conformation).  The assumption that the membrane populates a 
+well-defined ensemble allows us to remove the membrane modes and calculate the 
+effective modes of the protein as influenced by the membrane.  This calculation 
+requires inversion of a large symmetric matrix.
+
+The calculation proceeds as follows:
+
+- The Hessian for the protein/membrane supersystem is calculated.
+- The part of the Hessian corresponding to the membrane alone is 
+   inverted.  This is the most computationally intensive step.
+- The Hessian for the protein/membrane supersystem is re-calculated,
+   and from this and the above described inverse, a pseduohessian 
+   for the protein is calculated.
+- The protein pseudohessian is decomposed, yielding the modes.
+
+
+================================================================
+================================================================
+
+2. Installation
+
+For full functionality, it is best to install the LAPACK and BLAS 
+libraries.  These will significantly speed up the eigendecomposition 
+of the Hessian matrix.  If you have some other method of decomposing 
+the Hessian matrix, then feel free to use that.  Matlab scripts that 
+serve this purpose may be obtained from the ANM website.  
+
+In the future, decomposition routines can be included in the
+imanm software, so that the intermediate steps of decomposing the block 
+Hessian and projecting it into the full-residue space will be eliminated.
+
+To compile, unpack the tarball, change to the 'src' directory and type:
+
+$ make all
+
+To clean up, type
+$ make clean
+
+The executables can be used to generate the normal modes of motion from 
+an ANM model of a membrane protein embedded in a membrane, modeled by 
+beads and springs.
+
+
+================================================================
+================================================================
+3. File descriptions
+
+-----------------
+Source code
+-----------------
+block2full_free.c -- Projects RTB eigenvectors into space of all residues
+cgmembrane.c -- Generates a coarse-grained model of a membrane as close-packed spheres
+deigsrt.c -- Numerical Recipes routine for sorting double-precision eigenvectors
+dpythag.c -- Numerical Recipes routine 
+exanm.c -- Explicit membrane ANM
+dsvdcmp.c -- Numerical Recipes routine for double-precision SVD
+imanm.c -- Implicit membrane ANM 
+lapdecomp_free.c -- Driver for lapsolve
+lapsolve.c -- LAPACK-based code for decomposing symmetric matrices
+membranmutil.c -- Utilities for membrane ANM
+nrutil.c -- Numerical Recipes utilities
+
+-----------------
+Example files
+-----------------
+2nwl.blk -- Rigid block definitions (see 'Blockfiles', below)
+2nwl_exanm.param -- Parameter file (see 'The Parameter File', below)
+2nwl-mem.pdb -- PDB file containing alpha carbon coordinates for GltPh
+enmem_cutfile.dat -- Distance cutoffs
+massfile_3.1.dat -- Node masses
+springfile_2.dat -- Force constants
+
+
+----------------------------------------------------------------
+Blockfiles
+----------------------------------------------------------------
+
+The input to imANM is referred to as a 'blockfile', which describes 
+the rigid blocks that are to be used.   The first 6 characters in
+each row of the blockfile are a header that indicate the type of data in 
+the row (similar to a PDB file).  There are currently 3 types of 
+headers, all of which are required:
+
+PDB	Indicates the name (including path) of the PDB file to be 
+	used in the calculation.
+
+BLOCK	Defines a block.  Each line contains 7 columns, separated 
+	by whitespace:
+
+	1. Integer identifier of the block.
+	2. Three-letter code for first residue in block.
+	3. Chain ID of first residue in block.
+	4. Sequential number of first residue in block.
+	5. Three-letter code for last residue in block.
+	6. Chain ID of last residue in block.
+	7. Sequential number of last residue in block.
+
+	Blocks do not have to appear in order, and several blocks
+	assigned to the same block ID will be grouped together in
+	the calculation.  Blocks of single residues are allowed, 
+	and are treated as point particles.  Blocks of two residues
+	are separated into two one-residue blocks.
+
+END	Indicates the end of the BLOCK definitions and the file.
+
+
+In addition to these fields, the blockfile may specify some values
+for the calculation that would otherwise be entered on the command-line.
+These are: 
+	mlo=	Sets the lower z-bound of the membrane (like -b flag)
+	mhi=	Sets the upper z-bound of the membrane (like -b flag)
+	cut=	Sets the cutoff distance (like -c flag)
+	mscl=	Sets the membrane scaling factor  (like -s flag)
+
+The values set in a blockfile override the default values used by the 
+program, and values provided on the command line override any values
+set in the blockfile.  
+
+Rows beginning with '#' are considered comments.
+
+
+---------------------------------
+The Parameter File
+---------------------------------
+
+The input to the exanm program is a parameter file containing keywords that
+identify other files.  File names are specified in the parameter file with
+the syntax
+
+keyword=filename
+
+Where 'keyword' is one of the currently recognized parameter keywords:
+
+syscoords -- REQUIRED PDB file of protein
+envcoords -- REQUIRED PDB file of membrane fragment
+massfile -- REQUIRED PDB file of node masses.  Format is three columns:
+            First column is the atom name as it appears in the PDB file,
+            Second column is a node identifier used internally,
+            Third column is the node mass in arbitrary units.  
+            Any atoms that apper in the syscoords of envcoords file must
+            have a mass specified in the massfile.  
+springfile -- Optional file of node force constants.  Format is three columns:
+              First two columns are identifiers of nodes that are joined by a spring.
+              These should correspond to the node identifiers that appear in the 
+              center column of the massfile.  The third column is the value of the 
+              force constant connecting nodes of these two types, in arbitrary units.
+              *NOTE that springs that are not specified in the springfile will be 
+              assigned the default value of 1.0.
+cutfile -- Optional file of node HALF cutoff distances.  This file has two columns:
+           First column is a node identifier, as in massfile and springfile.  Second
+           column is half the cutoff distance associated with that node.  
+           Only nodes that are listed in the cutfile will be assigned contact cutoff
+           distances -- it is not necessary to list all node types in the cutfile.
+           Nodes that are not listed in the cutfile will be assigned the default 
+           cutoff value.  If 'DEFCUT' is specified as a node identifier in the 
+           cutfile, then this value will be used as the default value for any 
+           unspecified nodes.  
+contactfile -- Optional file of node contacts
+

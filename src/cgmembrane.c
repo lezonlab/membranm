@@ -41,20 +41,21 @@
 
 void read_command_line(int,char*[],double*,double*,double*,double*,int*,int*);
 int protclash(double [],PDB_File *,int,double);
-void assign_lpvs(double [][3],int);
 
 int main(int argc,char *argv[])
 {
   PDB_File PDB;
   double mass;
-  double mhi,mlo,rho,rhsq,rr,dd,ds;
+  double mhi,mlo,rho,rhsq,centroid_radius,dd,ds;
   double pxhi,pxlo,pyhi,pylo,pzhi,pzlo;
-  double A[3][3],X[3];
+  double X[3];
+  double root3;
   int lat;
-  int atm,who,nh,nm,nres,imax,jmax,kmax,i,j,k,p;
+  int atm,who,nh,nm,nres,imax,jmax,kmax,i,j,k,p,q;
 
-  read_command_line(argc,argv,&mlo,&mhi,&rho,&rr,&who,&lat);
+  read_command_line(argc,argv,&mlo,&mhi,&rho,&centroid_radius,&who,&lat);
 
+  root3 = sqrt(3.0);
 
   /* Read PDB file */
   if(who!=0){
@@ -64,109 +65,95 @@ int main(int argc,char *argv[])
     read_pdb3(argv[who],&PDB,nh,nres);
 
     /* Find the extent of the protein */
-    pxhi=pyhi=pzhi=-10000.0;
-    pxlo=pylo=pzlo=10000.0;
-    for(i=1;i<=nres;i++){
-      if(PDB.atom[i].X[0]<pxlo) pxlo=PDB.atom[i].X[0];
-      if(PDB.atom[i].X[0]>pxhi) pxhi=PDB.atom[i].X[0];
-      if(PDB.atom[i].X[1]<pylo) pylo=PDB.atom[i].X[1];
-      if(PDB.atom[i].X[1]>pyhi) pyhi=PDB.atom[i].X[1];
-      if(PDB.atom[i].X[2]<pzlo) pzlo=PDB.atom[i].X[2];
-      if(PDB.atom[i].X[2]>pzhi) pzhi=PDB.atom[i].X[2];
+    pxhi = pyhi = pzhi = -10000.0;
+    pxlo = pylo = pzlo = 10000.0;
+    for(i=1; i<=nres; i++){
+      if(PDB.atom[i].X[0] < pxlo) pxlo = PDB.atom[i].X[0];
+      if(PDB.atom[i].X[0] > pxhi) pxhi = PDB.atom[i].X[0];
+      if(PDB.atom[i].X[1] < pylo) pylo = PDB.atom[i].X[1];
+      if(PDB.atom[i].X[1] > pyhi) pyhi = PDB.atom[i].X[1];
+      if(PDB.atom[i].X[2] < pzlo) pzlo = PDB.atom[i].X[2];
+      if(PDB.atom[i].X[2] > pzhi) pzhi = PDB.atom[i].X[2];
     }
   }
 
 
-  /* Calculate the maximum number of points in the volume
-  mxpts=(int)(0.75*(mhi-mlo)*rho*rho/rr/rr/rr); */
-
-
-  /* Assign lattice primitive vectors */
-  assign_lpvs(A,lat);
-
-  /* Number of points : imax, jmax and kmax are the expected limits 
-     along the first, second and third primitive vectors.  If d is a 
-     vector that points from the center of the membrane fragment to the
-     point that is maximally distant along the first primitive vector, then
-     the projection of d onto A[0] is the required length along A[0].
-     The associated number of lattice points is this length divided by the
-     centroid radius.  The maximum projection in the x-y plane is rho and 
-     the maximum projection in the z-direction is half the membrane thickness. 
+  /* For FCC lattice:
+     1. A line of points from (-imax,0,0) to (imax,0,0)
+     2. The same thing as 1, but repeated from z=-kmax to z=kmax
+     3. More stuff
   */
-  imax = (rho + A[0][2]*(mhi-mlo)/2.0)/rr;
-  jmax = (rho + A[1][2]*(mhi-mlo)/2.0)/rr;
-  kmax = (rho + A[2][2]*(mhi-mlo)/2.0)/rr;
-  
+
+  /* imax, jmax, kmax are x- y- z- limits */
+  imax = jmax = rho/centroid_radius/2;
+  kmax = (mhi-mlo)/centroid_radius/4;
   
   fprintf(stderr,"imax\t%d\njmax\t%d\nkmax\t%d\n",imax,jmax,kmax);
-
 
   /* Print PDB header */
   printf("REMARK   7\n");
   printf("REMARK   7 Generated with command:\n");
   printf("REMARK   7 ");
-  for(i=0;i<argc;i++) printf("%s ",argv[i]);
+  for(i=0; i<argc; i++) printf("%s ",argv[i]);
   printf("\n");
 
-
   /* Identify all candidate lattice sites */
-  atm=0;
-  rhsq=rho*rho;
-  ds=2.0*rr;
-  for(i=-imax;i<=imax;i++){
-    for(j=-imax;j<=imax;j++){
-      for(k=-kmax;k<=kmax;k++){
-	for(p=0;p<3;p++){
-	  X[p]=ds*((double)i*A[0][p]+(double)j*A[1][p]+(double)k*A[2][p]);
-	}
+  /* Construct a hexagonal lattice in the x-y plane (q=0), with one LPV along the x-axis, and one site
+     at the origin: Place sites along the x-axis (p=0), and duplicate them for non-zero values of y. 
+     Generate sites slighly offset (p=1), and duplicate these along y. Duplicate the entire plane for
+     discrete z-values. Similarly, generate an offset plane (q=1) by constructing two rows (p=0,1) and 
+     repeating them along y- and z-axes. */
+  atm = 0;
+  rhsq = rho*rho;
+  ds = 2.0*centroid_radius;
+  for(i=-imax; i<=imax; i++){
+    //jmax = sqrt((double)(imax*imax - i*i));
+    for(j=-jmax; j<=jmax; j++){
+      for(q=0; q<=1; q++){
+	for(p=0; p<=1; p++){
+	  X[0] = q==0 ? (double)i*ds + (double)p*centroid_radius : (double)i*ds + (1-p)*centroid_radius;
+	  X[1] = (double)j*root3*ds + (double)q*centroid_radius/root3 + (double)p*root3*centroid_radius;
 
-	/* Keep lattice site if it's not too far out */
-	dd=0.0;
-	for(p=0;p<2;p++) dd+=X[p]*X[p];
-	if(dd<=rhsq && X[2]>mlo && X[2]<mhi){
+	  dd = X[0]*X[0] + X[1]*X[1];
+	  if(dd <= rhsq){
+	    for(k=-kmax; k<=kmax; k++){
+	      X[2] = (double)k*ds + (double)q*M_SQRT2/root3*centroid_radius;
+	  
+	      /* Keep all points when no PDB file is specified */
+	      if(who==0){
+		atm++;
+		printf("ATOM% 7d  Q1  NE1 Q%4d% 12.3f% 8.3f% 8.3f\n",atm,atm,X[0],X[1],X[2]);
+	      }
 
-	  /* Keep all points when no PDB file is specified */
-	  /* Condition for x-y plane: fabs(X[2])<1.0e-3 */
-	  /* Condition for fragment edge: dd>rhsq+4.0*rr*rr-4.0*rr*rho */
-	  if(who==0 && dd<rhsq+4.0*rr*rr-4.0*rr*rho){
-	    atm++;
-	    printf("ATOM% 7d  Q1  NE1 Q%4d% 12.3f% 8.3f% 8.3f\n",
-		   atm,atm,X[0],X[1],X[2]);
-	  }
-
-	  /* Look for clashes if site is close to protein */
-	  else if(X[0]>pxlo && X[0]<pxhi && X[1]>pylo && 
-		  X[1]<pyhi && X[2]>pzlo && X[2]<pzhi){
-	    if(protclash(X,&PDB,nres,5.0)==0){/* && dd>389.0){ */
-	      atm++;
-	      printf("ATOM% 7d  Q1  NE1 Q%4d% 12.3f% 8.3f% 8.3f\n",
-		     atm,atm,X[0],X[1],X[2]);
+	      /* Look for clashes if site is close to protein */
+	      else if(X[0]>pxlo && X[0]<pxhi && X[1]>pylo && X[1]<pyhi && X[2]>pzlo && X[2]<pzhi){
+		if(protclash(X,&PDB,nres,5.0)==0){
+		  atm++;
+		  printf("ATOM% 7d  Q1  NE1 Q%4d% 12.3f% 8.3f% 8.3f\n",atm,atm,X[0],X[1],X[2]);
+		}
+	      }
+	      else if(who!=0){
+		atm++;
+		printf("ATOM% 7d  Q1  NE1 Q%4d% 12.3f% 8.3f% 8.3f\n",atm,atm,X[0],X[1],X[2]);
+	      }
 	    }
 	  }
-
-	  else if(who!=0){
-	    atm++;
-	    printf("ATOM% 7d  Q1  NE1 Q%4d% 12.3f% 8.3f% 8.3f\n",
-		   atm,atm,X[0],X[1],X[2]);
-	  }
-
 	}
       }
     }
   }
   printf("END");
-  for(i=4;i<=80;i++) printf(" ");
+  for(i=4; i<=80; i++) printf(" ");
   printf("\n");
 
 
   /* Centroid mass = (membrane density)*(membrane volume)/atm 
      The prefactor of 0.005473 converts g/cm^3 to m_0/\AA^3*/
-  mass=0.005473*0.9*M_PI*rhsq*(mhi-mlo)/(double)atm;
+  mass = 0.005473*0.9*M_PI*rhsq*(mhi-mlo)/(double)atm;
 
   fprintf(stderr,"%d centroids\n",atm);
   fprintf(stderr,"Centroid mass = %f*residue mass\n",mass);
-  fprintf(stderr,"              = %f Da, assuming residue mass of 110 Da\n",
-	  110.0*mass);
+  fprintf(stderr,"              = %f Da, assuming residue mass of 110 Da\n",110.0*mass);
   return 0;
 }
 
@@ -300,58 +287,3 @@ int protclash(double X[],PDB_File *PDB,int nres,double rad)
   }
   return 0;
 } 
-
-
-/* "assign_lpvs" assigns lattice primitive vectors. */
-void assign_lpvs(double A[][3],int lat)
-{
-  /* Lattice primitive vectors:
-     FCC: 1/sqrt(2)*(0,1,1); 1/sqrt(2)*(1,0,1); 1/sqrt(2)*(1,1,0)
-     SC: (1,0,0); (0,1,0); (0,0,1)
-     SH/HCP: 0.5*(1,-sqrt(3),0); 0.5*(1,sqrt(3),0); (0,0,1)
-  */
-
-  /* FCC: 1/sqrt(2)*(0,1,1); 1/sqrt(2)*(1,0,1); 1/sqrt(2)*(1,1,0) */
-  if(lat==0){
-    A[0][0]=0.0;
-    A[0][1]=M_SQRT1_2;
-    A[0][2]=M_SQRT1_2;
-    A[1][0]=M_SQRT1_2;
-    A[1][1]=0.0;
-    A[1][2]=M_SQRT1_2;
-    A[2][0]=M_SQRT1_2;
-    A[2][1]=M_SQRT1_2;
-    A[2][2]=0.0;
-  }
-
-
-  /* SH: 0.5*(1,-sqrt(3),0); 0.5*(1,sqrt(3),0); (0,0,1) */
-  else if(lat==1){
-    A[0][0]=0.5;
-    A[0][1]=-sqrt(3.0)/2.0;
-    A[0][2]=0.0;
-    A[1][0]=0.5;
-    A[1][1]=sqrt(3.0)/2.0;
-    A[1][2]=0.0;
-    A[2][0]=0.0;
-    A[2][1]=0.0;
-    A[2][2]=1.0;
-  }
-
-  /* SC: (1,0,0); (0,1,0); (0,0,1) */
-  else if(lat==2){
-    A[0][0]=1.0;
-    A[0][1]=0.0;
-    A[0][2]=0.0;
-    A[1][0]=0.0;
-    A[1][1]=1.0;
-    A[1][2]=0.0;
-    A[2][0]=0.0;
-    A[2][1]=0.0;
-    A[2][2]=1.0;
-  }
-
-  else{
-    fprintf(stderr,"\nassign_lpvs: unknown lattice type\n\n");
-    exit(1);}
-}
